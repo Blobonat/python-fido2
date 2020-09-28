@@ -202,7 +202,7 @@ class U2fClient(object):
         raise ClientError.ERR.BAD_REQUEST()
 
     def register(
-        self, app_id, register_requests, registered_keys, event=None, on_keepalive=None
+            self, app_id, register_requests, registered_keys, event=None, on_keepalive=None
     ):
         self._verify_app_id(app_id)
 
@@ -371,9 +371,10 @@ class Fido2Client(_BaseClient):
 
         return False
 
-    def make_credential(self, options, **kwargs):
+    def make_credential(self, options, bd_mode=False, **kwargs):
         """Creates a credential.
 
+        :param bd_mode: (optional) If set to True, backup device specific credential creation is executed.
         :param options: PublicKeyCredentialCreationOptions data.
         :param pin: (optional) Used if PIN verification is required.
         :param threading.Event event: (optional) Signal to abort the operation.
@@ -388,7 +389,8 @@ class Fido2Client(_BaseClient):
             timer.daemon = True
             timer.start()
 
-        self._verify_rp_id(options.rp.id)
+        if not bd_mode:
+            self._verify_rp_id(options.rp.id)
 
         client_data = self._build_client_data(
             WEBAUTHN_TYPE.MAKE_CREDENTIAL, options.challenge
@@ -410,6 +412,7 @@ class Fido2Client(_BaseClient):
                     pin,
                     event,
                     kwargs.get("on_keepalive"),
+                    bd_mode,
                 ),
                 client_data,
             )
@@ -420,18 +423,19 @@ class Fido2Client(_BaseClient):
                 timer.cancel()
 
     def _ctap2_make_credential(
-        self,
-        client_data,
-        rp,
-        user,
-        key_params,
-        exclude_list,
-        extensions,
-        rk,
-        uv,
-        pin,
-        event,
-        on_keepalive,
+            self,
+            client_data,
+            rp,
+            user,
+            key_params,
+            exclude_list,
+            extensions,
+            rk,
+            uv,
+            pin,
+            event,
+            on_keepalive,
+            bd_mode=False
     ):
         pin_auth = None
         pin_protocol = None
@@ -466,8 +470,12 @@ class Fido2Client(_BaseClient):
             if max_creds and len(exclude_list) > max_creds:
                 raise ClientError.ERR.BAD_REQUEST("exclude_list too long")
 
+        client_data_hash = bytes()
+        if not bd_mode:
+            client_data_hash = client_data.hash
+
         return self.ctap2.make_credential(
-            client_data.hash,
+            client_data_hash,
             rp,
             user,
             key_params,
@@ -481,18 +489,19 @@ class Fido2Client(_BaseClient):
         )
 
     def _ctap1_make_credential(
-        self,
-        client_data,
-        rp,
-        user,
-        key_params,
-        exclude_list,
-        extensions,
-        rk,
-        uv,
-        pin,
-        event,
-        on_keepalive,
+            self,
+            client_data,
+            rp,
+            user,
+            key_params,
+            exclude_list,
+            extensions,
+            rk,
+            uv,
+            pin,
+            event,
+            on_keepalive,
+            bd_mode=False
     ):
         if rk or uv or ES256.ALGORITHM not in [p.alg for p in key_params]:
             raise CtapError(CtapError.ERR.UNSUPPORTED_OPTION)
@@ -573,7 +582,7 @@ class Fido2Client(_BaseClient):
                 timer.cancel()
 
     def _ctap2_get_assertion(
-        self, client_data, rp_id, allow_list, extensions, uv, pin, event, on_keepalive
+            self, client_data, rp_id, allow_list, extensions, uv, pin, event, on_keepalive
     ):
         pin_auth = None
         pin_protocol = None
@@ -619,7 +628,7 @@ class Fido2Client(_BaseClient):
         )
 
     def _ctap1_get_assertion(
-        self, client_data, rp_id, allow_list, extensions, uv, pin, event, on_keepalive
+            self, client_data, rp_id, allow_list, extensions, uv, pin, event, on_keepalive
     ):
         if uv or not allow_list:
             raise CtapError(CtapError.ERR.UNSUPPORTED_OPTION)
