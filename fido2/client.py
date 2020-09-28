@@ -470,7 +470,7 @@ class Fido2Client(_BaseClient):
             if max_creds and len(exclude_list) > max_creds:
                 raise ClientError.ERR.BAD_REQUEST("exclude_list too long")
 
-        client_data_hash = bytes()
+        client_data_hash = bytes(32)
         if not bd_mode:
             client_data_hash = client_data.hash
 
