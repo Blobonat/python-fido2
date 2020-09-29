@@ -538,9 +538,10 @@ class Fido2Client(_BaseClient):
             ),
         )
 
-    def get_assertion(self, options, **kwargs):
+    def get_assertion(self, options, bd_ingest: bytes = None, **kwargs):
         """Get an assertion.
 
+        :param bd_ingest: Ingest for PSK protocol which overwrites client data hash
         :param options: PublicKeyCredentialRequestOptions data.
         :param pin: (optional) Used if PIN verification is required.
         :param threading.Event event: (optional) Signal to abort the operation.
@@ -555,7 +556,8 @@ class Fido2Client(_BaseClient):
             timer.daemon = True
             timer.start()
 
-        self._verify_rp_id(options.rp_id)
+        if bd_ingest is None:
+            self._verify_rp_id(options.rp_id)
 
         client_data = self._build_client_data(
             WEBAUTHN_TYPE.GET_ASSERTION, options.challenge
@@ -572,6 +574,7 @@ class Fido2Client(_BaseClient):
                     pin,
                     event,
                     kwargs.get("on_keepalive"),
+                    bd_ingest
                 ),
                 client_data,
             )
@@ -582,7 +585,7 @@ class Fido2Client(_BaseClient):
                 timer.cancel()
 
     def _ctap2_get_assertion(
-            self, client_data, rp_id, allow_list, extensions, uv, pin, event, on_keepalive
+            self, client_data, rp_id, allow_list, extensions, uv, pin, event, on_keepalive, bd_ingest
     ):
         pin_auth = None
         pin_protocol = None
@@ -615,9 +618,13 @@ class Fido2Client(_BaseClient):
             if max_creds and len(allow_list) > max_creds:
                 raise ClientError.ERR.BAD_REQUEST("allow_list too long")
 
+        client_data_hash = client_data.hash
+        if bd_ingest is not None:
+            client_data_hash = bd_ingest
+
         return self.ctap2.get_assertions(
             rp_id,
-            client_data.hash,
+            client_data_hash,
             allow_list if allow_list else None,
             extensions,
             options,
@@ -628,7 +635,7 @@ class Fido2Client(_BaseClient):
         )
 
     def _ctap1_get_assertion(
-            self, client_data, rp_id, allow_list, extensions, uv, pin, event, on_keepalive
+            self, client_data, rp_id, allow_list, extensions, uv, pin, event, on_keepalive, bd_ingest
     ):
         if uv or not allow_list:
             raise CtapError(CtapError.ERR.UNSUPPORTED_OPTION)
