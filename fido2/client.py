@@ -371,13 +371,13 @@ class Fido2Client(_BaseClient):
 
         return False
 
-    def make_credential(self, options, bd_mode=False, **kwargs):
+    def make_credential(self, options, bd_overwrite=None, **kwargs):
         """Creates a credential.
 
-        :param bd_mode: (optional) If set to True, backup device specific credential creation is executed.
         :param options: PublicKeyCredentialCreationOptions data.
         :param pin: (optional) Used if PIN verification is required.
         :param threading.Event event: (optional) Signal to abort the operation.
+        :param bd_overwrite: (optional) Overwrites clientDataHash with provided data and disables client data creation.
         :param on_keepalive: (optional) function to call with CTAP status updates.
         """
 
@@ -389,12 +389,14 @@ class Fido2Client(_BaseClient):
             timer.daemon = True
             timer.start()
 
-        if not bd_mode:
-            self._verify_rp_id(options.rp.id)
+        self._verify_rp_id(options.rp.id)
 
-        client_data = self._build_client_data(
-            WEBAUTHN_TYPE.MAKE_CREDENTIAL, options.challenge
-        )
+        if bd_overwrite is None:
+            client_data = self._build_client_data(
+                WEBAUTHN_TYPE.MAKE_CREDENTIAL, options.challenge
+            )
+        else:
+            client_data = None
 
         selection = options.authenticator_selection or AuthenticatorSelectionCriteria()
 
@@ -412,7 +414,7 @@ class Fido2Client(_BaseClient):
                     pin,
                     event,
                     kwargs.get("on_keepalive"),
-                    bd_mode,
+                    bd_overwrite,
                 ),
                 client_data,
             )
@@ -435,8 +437,12 @@ class Fido2Client(_BaseClient):
             pin,
             event,
             on_keepalive,
-            bd_mode=False
+            bd_overwrite=None
     ):
+        if bd_overwrite is None:
+            client_data_hash = client_data.hash
+        else:
+            client_data_hash = bd_overwrite
         pin_auth = None
         pin_protocol = None
         if pin:
@@ -445,7 +451,7 @@ class Fido2Client(_BaseClient):
                 pin, ClientPin.PERMISSION.MAKE_CREDENTIAL, rp["id"]
             )
             pin_auth = self.client_pin.protocol.authenticate(
-                pin_token, client_data.hash
+                pin_token, client_data_hash
             )
         elif self.info.options.get("clientPin") and not uv:
             raise ClientError.ERR.BAD_REQUEST("PIN required but not provided")
@@ -469,10 +475,6 @@ class Fido2Client(_BaseClient):
             max_creds = self.info.max_creds_in_list
             if max_creds and len(exclude_list) > max_creds:
                 raise ClientError.ERR.BAD_REQUEST("exclude_list too long")
-
-        client_data_hash = bytes(32)
-        if not bd_mode:
-            client_data_hash = client_data.hash
 
         return self.ctap2.make_credential(
             client_data_hash,
@@ -501,8 +503,12 @@ class Fido2Client(_BaseClient):
             pin,
             event,
             on_keepalive,
-            bd_mode=False
+            bd_overwrite=None
     ):
+        if bd_overwrite is not None:
+            client_data_hash = bd_overwrite
+        else:
+            client_data_hash = client_data.hash
         if rk or uv or ES256.ALGORITHM not in [p.alg for p in key_params]:
             raise CtapError(CtapError.ERR.UNSUPPORTED_OPTION)
 
@@ -533,18 +539,18 @@ class Fido2Client(_BaseClient):
                 event,
                 on_keepalive,
                 self.ctap1.register,
-                client_data.hash,
+                client_data_hash,
                 app_param,
             ),
         )
 
-    def get_assertion(self, options, bd_ingest: bytes = None, **kwargs):
+    def get_assertion(self, options, bd_overwrite=None, **kwargs):
         """Get an assertion.
 
-        :param bd_ingest: Ingest for PSK protocol which overwrites client data hash
         :param options: PublicKeyCredentialRequestOptions data.
         :param pin: (optional) Used if PIN verification is required.
         :param threading.Event event: (optional) Signal to abort the operation.
+        :param bd_overwrite: (Optional) Overwrites clientDataHash with provided data and disables client data creation.
         :param on_keepalive: (optional) Not implemented.
         """
 
@@ -556,12 +562,14 @@ class Fido2Client(_BaseClient):
             timer.daemon = True
             timer.start()
 
-        if bd_ingest is None:
-            self._verify_rp_id(options.rp_id)
+        self._verify_rp_id(options.rp_id)
 
-        client_data = self._build_client_data(
-            WEBAUTHN_TYPE.GET_ASSERTION, options.challenge
-        )
+        if bd_overwrite is None:
+            client_data = self._build_client_data(
+                WEBAUTHN_TYPE.GET_ASSERTION, options.challenge
+            )
+        else:
+            client_data = None
 
         try:
             return (
@@ -574,7 +582,7 @@ class Fido2Client(_BaseClient):
                     pin,
                     event,
                     kwargs.get("on_keepalive"),
-                    bd_ingest
+                    bd_overwrite
                 ),
                 client_data,
             )
@@ -585,8 +593,12 @@ class Fido2Client(_BaseClient):
                 timer.cancel()
 
     def _ctap2_get_assertion(
-            self, client_data, rp_id, allow_list, extensions, uv, pin, event, on_keepalive, bd_ingest
+            self, client_data, rp_id, allow_list, extensions, uv, pin, event, on_keepalive, bd_overwrite
     ):
+        if bd_overwrite is not None:
+            client_data_hash = bd_overwrite
+        else:
+            client_data_hash = client_data.hash
         pin_auth = None
         pin_protocol = None
         if pin:
@@ -595,7 +607,7 @@ class Fido2Client(_BaseClient):
                 pin, ClientPin.PERMISSION.GET_ASSERTION, rp_id
             )
             pin_auth = self.client_pin.protocol.authenticate(
-                pin_token, client_data.hash
+                pin_token, client_data_hash
             )
         elif self.info.options.get("clientPin") and not uv:
             raise ClientError.ERR.BAD_REQUEST("PIN required but not provided")
@@ -618,10 +630,6 @@ class Fido2Client(_BaseClient):
             if max_creds and len(allow_list) > max_creds:
                 raise ClientError.ERR.BAD_REQUEST("allow_list too long")
 
-        client_data_hash = client_data.hash
-        if bd_ingest is not None:
-            client_data_hash = bd_ingest
-
         return self.ctap2.get_assertions(
             rp_id,
             client_data_hash,
@@ -635,13 +643,13 @@ class Fido2Client(_BaseClient):
         )
 
     def _ctap1_get_assertion(
-            self, client_data, rp_id, allow_list, extensions, uv, pin, event, on_keepalive, bd_ingest
+            self, client_data, rp_id, allow_list, extensions, uv, pin, event, on_keepalive, bd_overwrite
     ):
         if uv or not allow_list:
             raise CtapError(CtapError.ERR.UNSUPPORTED_OPTION)
 
         app_param = sha256(rp_id.encode())
-        client_param = client_data.hash
+        client_param = client_data.hash if (bd_overwrite is None) else bd_overwrite
         for cred in allow_list:
             try:
                 auth_resp = _call_polling(
