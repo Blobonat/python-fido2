@@ -102,3 +102,8 @@ device to run.
 
   pipenv run test
 
+==== PSK Backup Device Support
+
+The module is extended with a `bd_overwrite` for `make_credential` and `get_assertion` of the client to use the default
+WebAuthn function for backup key- and delegation creation.
+
